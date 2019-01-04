@@ -1,0 +1,86 @@
+#!/bin/bash
+PATH=/etc:/bin:/sbin:/usr/bin:/usr/sbin:/usr/local/bin:/usr/local/sbin
+expireTime=7200 #微信token失效时间
+dbFile="db.json" #token信息
+corpid="ww604d60d93d96c595" #"我的企业" 最下面
+agentid="1000002" # "企业应用" 第一行
+corpsecret="AK3b3M9ttAfWaYVRjgQJL2d8pBawFDxaUM6acj99Wk4" # "企业应用" 第二行
+touser="ZhangJian" # "通讯录"->"成员详情" 的帐号
+toparty="1" # "通讯录" 左侧部门最右边的企业里的ID
+#content="发送的内容" #报警发送的内容
+MAIL_1=13182828958@163.com
+duanko_1=`lsof -i:80|wc -l`
+ip=`ifconfig|sed -n "2p"|awk -F" " '{print "服务器:"$2}'`
+function HTTPD_1() {
+if [ $duanko_1 -eq 0 ]
+  then
+ztm_1="stop"
+  else
+ztm_1="start"
+fi
+}
+
+function huifu_1() {
+if [ $ztm_1 = "stop" ]
+ then 
+ systemctl start httpd && ztm_2="ok"
+ else 
+ ztm_2="fail"
+fi
+}
+
+function panduan_1() {
+if [ $ztm_2 = "ok" ]
+ then 
+content=$ip.httpd服务异常停止，但已成功恢复！
+else
+content=$ip.httpd服务器异常停止,恢复失败,请尽快处理!
+fi
+}
+
+function weixin() {
+
+if [ ! -f "$dbFile" ];then  #判断db文件是否存在
+        touch "$dbFile"
+fi
+
+req_time=`jq '.req_time' $dbFile`    #获取token
+current_time=$(date +%s)
+refresh=false
+if [ ! -n "$req_time" ];then
+        refresh=true
+else
+        if [ $((current_time-req_time)) -gt $expireTime ];then
+        refresh=true
+        fi
+fi
+if $refresh ;then
+	req_access_token_url=https://qyapi.weixin.qq.com/cgi-bin/gettoken?corpid=$corpid\&corpsecret=$corpsecret
+	access_res=$(curl -s -G $req_access_token_url | jq -r '.access_token')
+       echo -e "{\n\"access_token\":\"$access_res\",\n\"req_time\":$current_time\n}" >$dbFile
+       echo "获取新token成功"
+
+fi
+
+
+msg_body="{\"touser\":\"$touser\",\"toparty\":\"$toparty\",\"msgtype\":\"text\",\"agentid\":$agentid,\"text\":{\"content\":\"$content\"}}" #要发送的人和内容content
+access_token=`jq -r '.access_token' $dbFile` #用jq获取保存的token值
+req_send_msg_url=https://qyapi.weixin.qq.com/cgi-bin/message/send?access_token=$access_token   #发送路径
+req_msg=$(curl -s -H "Content-Type: application/json" -X POST -d $msg_body $req_send_msg_url | jq -r '.errmsg') #发送报警信息并用jq提前发送状态
+echo "$req_msg"
+
+}
+
+function mail_1() {
+echo "$content" | mail -s "服务器出现问题" $MAIL_1  >> /dev/null
+}
+
+main() {
+HTTPD_1
+huifu_1
+panduan_1
+weixin
+mail_1
+}
+
+main
